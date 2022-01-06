@@ -19,4 +19,5 @@ const (
 	InvulnerabilityTime = 100
 	RespawnTime         = 100
 	ReloadTime          = 10
+	InitialRockCount    = 30
 )

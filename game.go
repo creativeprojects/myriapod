@@ -18,6 +18,7 @@ type Game struct {
 	grid         [][]*Rock
 	player       *Player
 	enemy        *FlyingEnemy
+	segments     []*Segment
 	bullets      []*Bullet
 	wave         int
 	time         int
@@ -93,6 +94,9 @@ func (g *Game) Update() error {
 				g.enemy.Start(g.player.sprite.X(lib.XCentre))
 			}
 		}
+		if len(g.segments) == 0 {
+			//
+		}
 		g.player.Update()
 		g.enemy.Update()
 	}
@@ -130,6 +134,18 @@ func (g *Game) newGrid() {
 	for i := range g.grid {
 		g.grid[i] = make([]*Rock, NumGridCols)
 	}
+}
+
+func (g *Game) RockCount() int {
+	count := 0
+	for _, row := range g.grid {
+		for _, element := range row {
+			if element != nil {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 // Convert a position in pixel units to a position in grid units.
