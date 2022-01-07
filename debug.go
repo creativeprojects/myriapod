@@ -12,9 +12,10 @@ import (
 var Debug = true
 
 func (g *Game) displayDebug(screen *ebiten.Image) {
-	template := " TPS: %0.2f Bullets: %d\n%s\n%s"
+	template := " TPS: %0.2f - Rocks: %d - Bullets: %d\n%s\n%s"
 	msg := fmt.Sprintf(template,
 		ebiten.CurrentTPS(),
+		g.RockCount(),
 		len(g.bullets),
 		g.player,
 		g.enemy,

@@ -95,8 +95,11 @@ func (g *Game) Update() error {
 			}
 		}
 		if len(g.segments) == 0 {
-			//
+			if g.RockCount() <= InitialRockCount+g.wave {
+				g.newRock()
+			}
 		}
+		g.updateGrid()
 		g.player.Update()
 		g.enemy.Update()
 	}
@@ -114,6 +117,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	if g.state == StatePlaying {
+		g.drawGrid(screen)
 		g.player.Draw(screen)
 		g.enemy.Draw(screen)
 		g.displayDebug(screen)
@@ -148,6 +152,38 @@ func (g *Game) RockCount() int {
 	return count
 }
 
+func (g *Game) updateGrid() {
+	for _, row := range g.grid {
+		for _, element := range row {
+			if element != nil {
+				element.Update()
+			}
+		}
+	}
+}
+
+func (g *Game) drawGrid(screen *ebiten.Image) {
+	for _, row := range g.grid {
+		for _, element := range row {
+			if element != nil {
+				element.Draw(screen)
+			}
+		}
+	}
+}
+
+func (g *Game) newRock() {
+	// retry every time we pick coordinates that already contain a rock
+	for {
+		x := rand.Intn(NumGridCols)
+		y := rand.Intn(NumGridRows-3) + 1 // Leave last 2 rows rock-free
+		if rock := g.grid[y][x]; rock == nil {
+			g.grid[y][x] = NewRock(x, y, false)
+			return
+		}
+	}
+}
+
 // Convert a position in pixel units to a position in grid units.
 // In this game, a grid square is 32 pixels.
 func PosToCell(x, y int) (int, int) {
@@ -155,9 +191,9 @@ func PosToCell(x, y int) (int, int) {
 }
 
 // Convert grid cell position to pixel coordinates, with a given offset
-func CellToPos(cellX, cellY, XOffset, YOffset int) (int, int) {
+func CellToPos(cellX, cellY, XOffset, YOffset int) (float64, float64) {
 	// If the requested offset is zero, returns the centre of the requested cell, hence the +16.
 	// In the case of the X axis, there's a 16 pixel border at the
 	// left and right of the screen, hence +16 becomes +32.
-	return (cellX * 32) + 32 + XOffset, (cellY * 32) + 16 + YOffset
+	return float64((cellX * 32) + 32 + XOffset), float64((cellY * 32) + 16 + YOffset)
 }
