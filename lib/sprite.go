@@ -2,7 +2,6 @@ package lib
 
 import (
 	"fmt"
-	"log"
 	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -81,7 +80,7 @@ func (s *Sprite) Update() {
 // Draw the current image, or the animation to the screen. If no image or animation has been set, it does nothing
 func (s *Sprite) Draw(screen *ebiten.Image) {
 	if s.image == nil {
-		log.Println("Sprite.Draw: no image to draw")
+		log.Print("Sprite.Draw: no image to draw")
 		return
 	}
 	width, height := s.image.Size()
