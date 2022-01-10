@@ -64,7 +64,21 @@ func (e *FlyingEnemy) IsInactive() bool {
 	return e.health <= 0 || x < -35 || x > 515
 }
 
+func (e *FlyingEnemy) Collision(x, y float64) bool {
+	if e.IsInactive() {
+		return false
+	}
+	if e.sprite.CollidePoint(x, y) {
+		e.health--
+		return true
+	}
+	return false
+}
+
 func (e *FlyingEnemy) Update() {
+	if e.IsInactive() {
+		return
+	}
 	e.timer++
 
 	// Move
@@ -83,6 +97,9 @@ func (e *FlyingEnemy) Update() {
 }
 
 func (e *FlyingEnemy) Draw(screen *ebiten.Image) {
+	if e.IsInactive() {
+		return
+	}
 	e.sprite.Draw(screen)
 }
 

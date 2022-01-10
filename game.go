@@ -10,9 +10,14 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
+var (
+	healthTable = [][]int{{1, 1}, {1, 2}, {2, 2}, {1, 1}}
+)
+
 type Game struct {
 	audioContext *audio.Context
 	musicPlayer  *AudioPlayer
+	background   []*ebiten.Image
 	state        GameState
 	space        *lib.Sprite
 	grid         [][]*Rock
@@ -36,14 +41,13 @@ func NewGame(audioContext *audio.Context) (*Game, error) {
 	g := &Game{
 		audioContext: audioContext,
 		musicPlayer:  m,
+		background:   []*ebiten.Image{images["bg0"], images["bg1"], images["bg2"]},
 		state:        StateMenu,
 		space: lib.NewSprite(lib.XLeft, lib.YTop).MoveTo(0, 420).Animate([]*ebiten.Image{
 			images["space0"], images["space1"], images["space2"], images["space3"], images["space4"],
 			images["space5"], images["space6"], images["space7"], images["space8"], images["space9"],
 			images["space10"], images["space11"], images["space12"], images["space13"],
 		}, nil, 4, true),
-		bullets:    make([]*Bullet, 0, 10),
-		explosions: make([]*Explosion, 0, 10),
 	}
 
 	return g.Initialize(), nil
@@ -55,6 +59,9 @@ func (g *Game) Initialize() *Game {
 	g.wave = -1
 	g.time = 0
 	g.score = 0
+	g.segments = make([]*Segment, 0, 20)
+	g.bullets = make([]*Bullet, 0, 10)
+	g.explosions = make([]*Explosion, 0, 10)
 	g.space.Start()
 	return g
 }
@@ -136,6 +143,19 @@ func (g *Game) Damage(cellX, cellY, amount int, fromBullet bool) bool {
 	return true
 }
 
+func (g *Game) ClearRocksForRespawn(x, y float64) {
+	// Destroy any rocks that might be overlapping with the player when they respawn
+	// Could be more than one rock, hence the loop
+	x0, y0 := PosToCell(x-18, y-10)
+	x1, y1 := PosToCell(x+18, y+10)
+
+	for yi := y0; yi <= y1; yi++ {
+		for xi := x0; xi <= x1; xi++ {
+			g.Damage(xi, yi, 5, false)
+		}
+	}
+}
+
 // Update game events
 func (g *Game) Update() error {
 	if g.state == StateMenu {
@@ -147,6 +167,9 @@ func (g *Game) Update() error {
 	}
 
 	if g.state == StatePlaying {
+		if inpututil.IsKeyJustPressed(ebiten.KeyD) {
+			Debug = !Debug
+		}
 		if g.enemy.IsInactive() {
 			if rand.Float64() < .01 {
 				g.enemy.Start(g.player.sprite.X(lib.XCentre))
@@ -155,13 +178,46 @@ func (g *Game) Update() error {
 		if len(g.segments) == 0 {
 			if g.RockCount() <= InitialRockCount+g.wave {
 				g.newRock()
+			} else {
+				// New wave and enough rocks - create a new myriapod
+				g.SoundEffect("wave0")
+				g.wave++
+				g.time = 0
+				numSegments := 8 + g.wave/4*2 // On the first four waves there are 8 segments - then 10, and so on
+				for i := 0; i < numSegments; i++ {
+					cellX, cellY := -1-i, 0
+					if Debug {
+						cellX, cellY = rand.Intn(7)+1, rand.Intn(7)+1
+					}
+					// Determines whether segments take one or two hits to kill, based on the wave number.
+					// e.g. on wave 0 all segments take one hit; on wave 1 they alternate between one and two hits
+					health := healthTable[g.wave%4][i%2]
+					fast := g.wave%4 == 3 // Every fourth myriapod moves faster than usual
+					head := i == 0        // The first segment of each myriapod is the head
+					segment := NewSegment(cellX, cellY, health, fast, head)
+					g.segments = append(g.segments, segment)
+				}
 			}
 		}
 		g.updateGrid()
+		g.updateSegments()
 		g.updateBullets()
 		g.updateExplosions()
 		g.player.Update()
 		g.enemy.Update()
+
+		if g.player.lives == 0 && g.player.timer == 100 {
+			g.SoundEffect("gameover")
+			g.state = StateGameOver
+		}
+		return nil
+	}
+
+	if g.state == StateGameOver {
+		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+			g.Initialize()
+		}
+		return nil
 	}
 	return nil
 }
@@ -169,20 +225,33 @@ func (g *Game) Update() error {
 // Draw game events
 func (g *Game) Draw(screen *ebiten.Image) {
 	if g.wave < 0 {
-		screen.DrawImage(images["bg0"], nil)
+		screen.DrawImage(g.background[0], nil)
+	} else {
+		screen.DrawImage(g.background[g.wave%3], nil)
 	}
+
 	if g.state == StateMenu {
 		screen.DrawImage(images["title"], nil)
 		g.space.Draw(screen)
+		return
 	}
 
 	if g.state == StatePlaying {
 		g.drawGrid(screen)
+		g.drawSegments(screen)
 		g.drawBullets(screen)
 		g.drawExplosions(screen)
 		g.player.Draw(screen)
 		g.enemy.Draw(screen)
-		g.displayDebug(screen)
+		if Debug {
+			g.displayDebug(screen)
+		}
+		return
+	}
+
+	if g.state == StateGameOver {
+		screen.DrawImage(images["over"], nil)
+		return
 	}
 }
 
@@ -300,6 +369,22 @@ func (g *Game) drawExplosions(screen *ebiten.Image) {
 	for _, explosion := range g.explosions {
 		if explosion != nil {
 			explosion.Draw(screen)
+		}
+	}
+}
+
+func (g *Game) updateSegments() {
+	for _, segment := range g.segments {
+		if segment != nil {
+			segment.Update()
+		}
+	}
+}
+
+func (g *Game) drawSegments(screen *ebiten.Image) {
+	for _, segment := range g.segments {
+		if segment != nil {
+			segment.Draw(screen)
 		}
 	}
 }

@@ -35,13 +35,24 @@ func (b *Bullet) Update() {
 
 	b.sprite.Move(0, -24)
 
-	if b.sprite.Y(lib.YCentre) <= 0 {
+	x := b.sprite.X(lib.XCentre)
+	y := b.sprite.Y(lib.YCentre)
+
+	if y <= 0 {
 		b.done = true
 	}
-	cellX, cellY := PosToCell(b.sprite.X(lib.XCentre), b.sprite.Y(lib.YCentre))
+	cellX, cellY := PosToCell(x, y)
 	if b.game.Damage(cellX, cellY, 1, true) {
 		// Hit a rock - destroy self
 		b.done = true
+		return
+	}
+	if b.game.enemy.Collision(x, y) {
+		b.game.score += 20
+		b.game.SoundEffect("meanie_explode0")
+		b.game.Explosion(x, y, 2)
+		b.done = true
+		return
 	}
 }
 
