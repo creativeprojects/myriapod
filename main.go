@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -14,6 +15,11 @@ var (
 
 func main() {
 	var err error
+
+	if DebugBuild {
+		flag.BoolVar(&Debug, "d", false, "Debug mode")
+		flag.Parse()
+	}
 
 	images, err = loadImages()
 	if err != nil {

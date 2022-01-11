@@ -1,6 +1,8 @@
 package main
 
 import (
+	"math/rand"
+
 	"github.com/cavern/creativeprojects/myriapod/lib"
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -53,6 +55,24 @@ func (b *Bullet) Update() {
 		b.game.Explosion(x, y, 2)
 		b.done = true
 		return
+	}
+
+	for i := 0; i < len(b.game.segments); i++ {
+		if b.game.segments[i].Collision(x, y) {
+			b.game.score += 10
+			b.game.SoundEffect("segment_explode0")
+			b.game.Explosion(x, y, 2)
+			b.done = true
+			if b.game.segments[i].health == 0 {
+				if b.game.grid[cellY][cellX] == nil && b.game.AllowPlayerMovement2(b.game.player.sprite.X(lib.XCentre), b.game.player.sprite.Y(lib.YCentre), cellX, cellY) {
+					// Create new rock - 20% chance of being a totem
+					b.game.grid[cellY][cellX] = NewRock(b.game, cellX, cellY, rand.Float64() < .2)
+				}
+				b.game.segments[i] = nil
+				b.game.segments = append(b.game.segments[:i], b.game.segments[i+1:]...)
+			}
+			return
+		}
 	}
 }
 

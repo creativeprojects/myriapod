@@ -20,4 +20,5 @@ const (
 	RespawnTime         = 100
 	ReloadTime          = 10
 	InitialRockCount    = 30
+	StartSegments       = 8
 )

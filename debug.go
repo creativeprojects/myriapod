@@ -9,7 +9,10 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
 
-var Debug = false
+var (
+	DebugBuild = true
+	Debug      = false
+)
 
 func (g *Game) displayDebug(screen *ebiten.Image) {
 	template := " TPS: %0.2f - score: %d \n Rocks: %d - Segments: %d - Bullets: %d - Explosions: %d\n%s\n%s"

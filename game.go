@@ -21,6 +21,7 @@ type Game struct {
 	state        GameState
 	space        *lib.Sprite
 	grid         [][]*Rock
+	occupied     []Cell
 	player       *Player
 	enemy        *FlyingEnemy
 	segments     []*Segment
@@ -62,6 +63,7 @@ func (g *Game) Initialize() *Game {
 	g.segments = make([]*Segment, 0, 20)
 	g.bullets = make([]*Bullet, 0, 10)
 	g.explosions = make([]*Explosion, 0, 10)
+	g.occupied = make([]Cell, StartSegments)
 	g.space.Start()
 	return g
 }
@@ -183,7 +185,7 @@ func (g *Game) Update() error {
 				g.SoundEffect("wave0")
 				g.wave++
 				g.time = 0
-				numSegments := 8 + g.wave/4*2 // On the first four waves there are 8 segments - then 10, and so on
+				numSegments := StartSegments + g.wave/4*2 // On the first four waves there are 8 segments - then 10, and so on
 				for i := 0; i < numSegments; i++ {
 					cellX, cellY := -1-i, 0
 					if Debug {
@@ -194,7 +196,7 @@ func (g *Game) Update() error {
 					health := healthTable[g.wave%4][i%2]
 					fast := g.wave%4 == 3 // Every fourth myriapod moves faster than usual
 					head := i == 0        // The first segment of each myriapod is the head
-					segment := NewSegment(cellX, cellY, health, fast, head)
+					segment := NewSegment(g, cellX, cellY, health, fast, head)
 					g.segments = append(g.segments, segment)
 				}
 			}
