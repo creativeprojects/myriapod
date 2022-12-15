@@ -15,6 +15,9 @@ var (
 type Segment struct {
 	game               *Game
 	sprite             *lib.Sprite
+	posX               float64
+	posY               float64
+	legFrame           int
 	cx                 int
 	cy                 int
 	health             int
@@ -24,6 +27,7 @@ type Segment struct {
 	outEdge            Direction
 	disallowDirection  Direction
 	previousXDirection Direction
+	direction          Direction
 }
 
 func NewSegment(game *Game, cx, cy, health int, fast, head bool) *Segment {
@@ -57,8 +61,8 @@ func (s *Segment) Collision(x, y float64) bool {
 }
 
 func (s *Segment) Update() {
-	x, y := CellToPos(s.cx, s.cy, 0, 0)
-	s.sprite.MoveTo(x, y)
+	s.update()
+	s.sprite.MoveTo(s.posX, s.posY)
 	s.sprite.SetImage(images["seg00000"])
 	s.sprite.Update()
 }
@@ -67,7 +71,147 @@ func (s *Segment) Draw(screen *ebiten.Image) {
 	s.sprite.Draw(screen)
 }
 
-func (s *Segment) rank(proposedOutEdge Direction) (bool, bool, bool, bool, bool, bool, bool) {
+func (s *Segment) update() {
+	// Segments take either 16 or 8 frames to pass through each grid cell, depending on the amount by which
+	// game.time is updated each frame. phase will be a number between 0 and 15 indicating where we're at
+	// in that cycle.
+	phase := s.game.time % 16
+
+	if phase == 0 {
+		// At this point, the segment is entering a new grid cell. We first update our current grid cell coordinates.
+		s.cx += DX[s.outEdge]
+		s.cy += DY[s.outEdge]
+
+		// We then need to update in_edge. If, for example, we left the previous cell via its right edge, that means
+		// we're entering the new cell via its left edge.
+		s.inEdge = s.outEdge.Inverse()
+
+		// During normal gameplay, once a segment reaches the bottom of the screen, it starts moving up again.
+		// Once it reaches row 18, it starts moving down again, so that it remains a threat to the player.
+		// During the title screen, we allow segments to go all the way back up to the top of the screen.
+		tempY := 0
+		if s.game.player != nil {
+			tempY = 18
+		}
+		if s.cy == tempY {
+			s.disallowDirection = DirectionUp
+		}
+		if s.cy == NumGridRows-1 {
+			s.disallowDirection = DirectionDown
+		}
+
+	} else if phase == 4 {
+		// At this point we decide which new cell we're going to go into (and therefore, which edge of the current
+		// cell we will leave via - to be stored in out_edge)
+		directions := make([]int, 4)
+		for i := 0; i <= 3; i++ {
+			directions[i] = s.rank(Direction(i))
+		}
+		min := 128
+		minDirection := 0
+		for i := 0; i <= 3; i++ {
+			if directions[i] < min {
+				min = directions[i]
+				minDirection = i
+			}
+		}
+		s.outEdge = Direction(minDirection)
+
+		if s.outEdge.IsHorizontal() {
+			s.previousXDirection = s.outEdge
+		}
+
+		newCellX := s.cx + DX[s.outEdge]
+		newCellY := s.cy + DY[s.outEdge]
+
+		// Destroy any rock that might be in the new cell
+		if newCellX >= 0 && newCellX < NumGridCols {
+			s.game.Damage(newCellX, newCellY, 5, false)
+		}
+
+		// Set new cell as occupied. It's a case of whichever segment is processed first, gets first dibs on a cell
+		// The second line deals with the case where two segments are moving towards each other and are in
+		// neighbouring cells. It allows a segment to tell if another segment trying to enter its cell from
+		// the opposite direction
+		s.game.occupied = append(s.game.occupied,
+			Cell{X: newCellX, Y: newCellY},
+			Cell{X: newCellX, Y: newCellY, Edge: s.outEdge.Inverse()},
+		)
+	}
+	// turnIdx tells us whether the segment is going to be making a 90 degree turn in the current cell, or moving
+	// in a straight line. 1 = anti-clockwise turn, 2 = straight ahead, 3 = clockwise turn, 0 = leaving through same
+	// edge from which we entered (unlikely to ever happen in practice)
+	turnIdx := (s.outEdge - s.inEdge) % 4
+
+	// Calculate segment offset in the cell, measured from the cell's centre
+	// We start off assuming that the segment is starting from the top of the cell - i.e. s.inEdge being DIRECTION_UP,
+	// corresponding to zero. The primary and secondary axes, as described under "SEGMENT MOVEMENT" above, are Y and X.
+	// We then apply a calculation to rotate these X and Y offsets, based on the actual direction the segment is coming from.
+	// Let's take as an example the case where the segment is moving in a straight line from top to bottom.
+	// We calculate offsetX by multiplying SECONDARY_AXIS_POSITIONS[phase] by 2-turn_idx. In this case, turn_idx
+	// will be 2.  So 2 - turn_idx will be zero. Multiplying anything by zero gives zero, so we end up with no
+	// movement on the X axis - which is what we want in this case.
+	// The starting point for the offset_y calculation is that the segment starts at an offset of -16 and must cover
+	// 32 pixels over the 16 phases - therefore we must multiply phase by 2. We then subtract the result of the
+	// previous line, in which stolen_y_movement was calculated by multiplying SECONDARY_AXIS_POSITIONS[phase] by
+	// turn_idx % 2.  mod 2 gives either zero (if turn_idx is 0 or 2), or 1 if it's 1 or 3. In the case we're looking
+	// at, turn_idx is 2, so stolen_y_movement is zero.
+	// The end result of all this is that in the case where the segment is moving in a straight line through a cell,
+	// it just moves at 2 pixels per frame along the primary axis. If it's turning, it starts out moving at 2px
+	// per frame on the primary axis, but then starts moving along the secondary axis based on the values in
+	// SECONDARY_AXIS_POSITIONS. In this case we don't want it to continue moving along the primary axis - it should
+	// initially slow to moving at 1px per phase, and then stop moving completely. Effectively, the secondary axis
+	// is stealing movement from the primary axis - hence the name 'stolen_y_movement'
+	offsetX := SecondaryAxisPositions[phase] * (2 - int(turnIdx))
+	stolen_y_movement := (int(turnIdx) % 2) * SecondaryAxisPositions[phase]
+	offsetY := -16 + (phase * 2) - stolen_y_movement
+
+	// A rotation matrix is a set of numbers which, when multiplied by a set of coordinates, result in those
+	// coordinates being rotated. Recall that the code above  makes the assumption that segment is starting from the
+	// top edge of the cell and moving down. The code below chooses the appropriate rotation matrix based on the
+	// actual edge the segment started from, and then modifies offset_x and offset_y based on this rotation matrix.
+	rotation_matrix := RotationData[s.inEdge]
+	offsetX = offsetX*rotation_matrix[0] + offsetY*rotation_matrix[1]
+	offsetY = offsetX*rotation_matrix[2] + offsetY*rotation_matrix[3]
+
+	// Finally, we can calculate the segment's position on the screen. See cell2pos function above.
+	s.posX, s.posY = CellToPos(s.cx, s.cy, offsetX, offsetY)
+
+	// We now need to decide which image the segment should use as its sprite.
+	// Images for segment sprites follow the format 'segABCDE' where A is 0 or 1 depending on whether this is a
+	// fast-moving segment, B is 0 or 1 depending on whether we currently have 1 or 2 health, C is whether this
+	// is the head segment of a myriapod, D represents the direction we're facing (0 = up, 1 = top right,
+	// up to 7 = top left) and E is how far we are through the walking animation (0 to 3)
+
+	// Three variables go into the calculation of the direction. turn_idx tells us if we're making a turn in this
+	// cell - and if so, whether we're turning clockwise or anti-clockwise. s.inEdge tells us which side of the
+	// grid cell we entered from. And we can use SECONDARY_AXIS_SPEED[phase] to find out whether we should be facing
+	// along the primary axis, secondary axis or diagonally between them.
+	// (turn_idx - 2) gives 0 if straight, -1 if turning anti-clockwise, 1 if turning clockwise
+	// Multiplying this by SECONDARY_AXIS_SPEED[phase] gives 0 if we're not doing a turn in this cell, or if
+	// we are going to be turning but have not yet begun to turn. If we are doing a turn in this cell, and we're
+	// at a phase where we should be showing a sprite with a new rotation, the result will be -1 or 1 if we're
+	// currently in the first (45°) part of a turn, or -2 or 2 if we have turned 90°.
+	// The next part of the calculation multiplies in_edge by 2 and then adds the result to the result of the previous
+	// part. in_edge will be a number from 0 to 3, representing all possible directions in 90° increments.
+	// It must be multiplied by two because the direction value we're calculating will be a number between 0 and 7,
+	// representing all possible directions in 45° increments.
+	// In the sprite filenames, the penultimate number represents the direction the sprite is facing, where a value
+	// of zero means it's facing up. But in this code, if, for example, in_edge were zero, this means the segment is
+	// coming from the top edge of its cell, and therefore should be facing down. So we add 4 to account for this.
+	// After all this, we may have ended up with a number outside the desired range of 0 to 7. So the final step
+	// is to MOD by 8.
+	s.direction = Direction(((SecondaryAxisSpeed[phase] * (int(turnIdx) - 2)) + (int(s.inEdge) * 2) + 4) % 8)
+
+	s.legFrame = phase / 4 // 16 phase cycle, 4 frames of animation
+
+	// Converting a boolean value to an integer gives 0 for False and 1 for True. We then need to convert the
+	// result to a string, as an integer can't be appended to a string.
+	// self.image = "seg" + str(int(self.fast)) + str(int(self.health == 2)) + str(int(self.head)) + str(direction) + str(leg_frame)
+
+}
+
+func (s *Segment) rank(proposedOutEdge Direction) int {
 	// proposed_out_edge is a number between 0 and 3, representing a possible direction to move - see DIRECTION_UP etc and DX/DY above
 	// This function returns a tuple consisting of a series of factors determining which grid cell the segment should try to move into next.
 	// These are not absolute rules - rather they are used to rank the four directions in order of preference,
@@ -91,12 +235,11 @@ func (s *Segment) rank(proposedOutEdge Direction) (bool, bool, bool, bool, bool,
 	directionDisallowed := proposedOutEdge == s.disallowDirection
 
 	// Check to see if there's a rock at the proposed new grid cell.
-	// rock will either be the Rock object at the new grid cell, or None.
-	// It will be set to None if there is no Rock object is at the new location, or if the new location is
+	// rock will either be the Rock object at the new grid cell, or nil.
+	// It will be set to nil if there is no Rock object is at the new location, or if the new location is
 	// outside the grid. We also have to account for the special case where the segment is off the left-hand
 	// side of the screen on the first row, where it is initially created. We mustn't try to access that grid
-	// cell (unlike most languages, in Python trying to access a list index with negative value won't necessarily
-	// result in a crash, but it's still not a good idea)
+	// cell
 	var rock *Rock
 	if out || (newCellY == 0 && newCellX < 0) {
 		rock = nil
@@ -125,5 +268,27 @@ func (s *Segment) rank(proposedOutEdge Direction) (bool, bool, bool, bool, bool,
 
 	// Finally we create and return a tuple of factors determining which cell segment should try to move into next.
 	// Most important first - e.g. we shouldn't enter a new cell if if's outside the grid
-	return out, turningBackOnSelf, directionDisallowed, occupiedBySegment, rockPresent, horizontalBlocked, sameAsPreviousXDirection
+	total := 0
+	if out {
+		total += 64
+	}
+	if turningBackOnSelf {
+		total += 32
+	}
+	if directionDisallowed {
+		total += 16
+	}
+	if occupiedBySegment {
+		total += 8
+	}
+	if rockPresent {
+		total += 4
+	}
+	if horizontalBlocked {
+		total += 2
+	}
+	if sameAsPreviousXDirection {
+		total += 1
+	}
+	return total
 }
