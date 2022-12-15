@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"embed"
 	"fmt"
 	"image"
@@ -52,14 +51,11 @@ func loadSounds() (map[string][]byte, error) {
 	}
 	soundsMap := make(map[string][]byte, len(soundNames))
 	for _, soundName := range soundNames {
-		// annoyingly, fs.File does not implement io.ReadSeeker,
-		// so we need to load it first and create a reader from the buffer
-		buffer, err := embeddedFiles.ReadFile(soundName)
+		file, err := embeddedFiles.Open(soundName)
 		if err != nil {
 			return soundsMap, fmt.Errorf("%s: %w", soundName, err)
 		}
-		reader := bytes.NewReader(buffer)
-		snd, err := vorbis.DecodeWithSampleRate(SampleRate, reader)
+		snd, err := vorbis.DecodeWithSampleRate(SampleRate, file)
 		if err != nil {
 			return soundsMap, fmt.Errorf("%s: %w", soundName, err)
 		}
