@@ -1,6 +1,9 @@
 package main
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/cavern/creativeprojects/myriapod/lib"
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -63,7 +66,27 @@ func (s *Segment) Collision(x, y float64) bool {
 func (s *Segment) Update() {
 	s.update()
 	s.sprite.MoveTo(s.posX, s.posY)
-	s.sprite.SetImage(images["seg00000"])
+
+	imageName := &strings.Builder{}
+	imageName.WriteString("seg")
+	if s.fast {
+		imageName.WriteByte('1')
+	} else {
+		imageName.WriteByte('0')
+	}
+	if s.health == 2 {
+		imageName.WriteByte('1')
+	} else {
+		imageName.WriteByte('0')
+	}
+	if s.head {
+		imageName.WriteByte('1')
+	} else {
+		imageName.WriteByte('0')
+	}
+	imageName.WriteString(strconv.Itoa(int(s.direction)))
+	imageName.WriteString(strconv.Itoa(s.legFrame))
+	s.sprite.SetImage(images[imageName.String()])
 	s.sprite.Update()
 }
 
@@ -204,11 +227,6 @@ func (s *Segment) update() {
 	s.direction = Direction(((SecondaryAxisSpeed[phase] * (int(turnIdx) - 2)) + (int(s.inEdge) * 2) + 4) % 8)
 
 	s.legFrame = phase / 4 // 16 phase cycle, 4 frames of animation
-
-	// Converting a boolean value to an integer gives 0 for False and 1 for True. We then need to convert the
-	// result to a string, as an integer can't be appended to a string.
-	// self.image = "seg" + str(int(self.fast)) + str(int(self.health == 2)) + str(int(self.head)) + str(direction) + str(leg_frame)
-
 }
 
 func (s *Segment) rank(proposedOutEdge Direction) int {
@@ -251,8 +269,7 @@ func (s *Segment) rank(proposedOutEdge Direction) int {
 
 	// Is new cell already occupied by another segment, or is another segment trying to enter my cell from
 	// the opposite direction?
-	// occupiedBySegment := (new_cell_x, new_cell_y) in game.occupied or (s.cx, s.cy, proposed_out_edge) in game.occupied
-	occupiedBySegment := false
+	occupiedBySegment := s.game.IsOccupied(newCellX, newCellY) || s.game.IsCellOccupied(Cell{s.cx, s.cy, proposedOutEdge})
 
 	// Prefer to move horizontally, unless there's a rock in the way.
 	// If there are rocks both horizontally and vertically, prefer to move vertically

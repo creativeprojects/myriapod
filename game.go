@@ -30,6 +30,7 @@ type Game struct {
 	wave         int
 	time         int
 	score        int
+	slow         bool
 }
 
 // NewGame creates a new game instance and prepares a demo AI game
@@ -158,8 +159,27 @@ func (g *Game) ClearRocksForRespawn(x, y float64) {
 	}
 }
 
+func (g *Game) IsOccupied(x, y int) bool {
+	for _, cell := range g.occupied {
+		if cell.X == x && cell.Y == y {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Game) IsCellOccupied(cell Cell) bool {
+	for _, existingCell := range g.occupied {
+		if existingCell.Equal(cell) {
+			return true
+		}
+	}
+	return false
+}
+
 // Update game events
 func (g *Game) Update() error {
+	g.time++
 	if g.state == StateMenu {
 		g.space.Update()
 		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
@@ -171,6 +191,15 @@ func (g *Game) Update() error {
 	if g.state == StatePlaying {
 		if inpututil.IsKeyJustPressed(ebiten.KeyD) {
 			Debug = !Debug
+		}
+		// toggle between slow and normal speed mode
+		if inpututil.IsKeyJustPressed(ebiten.KeyS) {
+			g.slow = !g.slow
+			if g.slow {
+				ebiten.SetMaxTPS(GameSlowSpeed)
+			} else {
+				ebiten.SetMaxTPS(GameNormalSpeed)
+			}
 		}
 		if g.enemy.IsInactive() {
 			if rand.Float64() < .01 {

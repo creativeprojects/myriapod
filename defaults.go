@@ -6,6 +6,8 @@ const (
 	WindowHeight        = 800.0
 	WindowTitle         = "Myriapod"
 	SampleRate          = 44100
+	GameNormalSpeed     = 60
+	GameSlowSpeed       = 20
 	NumGridRows         = 25
 	NumGridCols         = 14
 	PlayerMinX          = 40

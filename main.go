@@ -15,9 +15,11 @@ var (
 
 func main() {
 	var err error
+	var slow bool
 
 	if DebugBuild {
 		flag.BoolVar(&Debug, "d", false, "Debug mode")
+		flag.BoolVar(&slow, "s", false, "Start in slow mode")
 		flag.Parse()
 	}
 
@@ -40,6 +42,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	game.slow = slow
 	if err := ebiten.RunGame(game); err != nil {
 		log.Fatal(err)
 	}
