@@ -1,18 +1,12 @@
 package main
 
 import (
+	"log"
 	"strconv"
 	"strings"
 
 	"github.com/cavern/creativeprojects/myriapod/lib"
 	"github.com/hajimehoshi/ebiten/v2"
-)
-
-var (
-	// X and Y directions indexed into by in_edge and out_edge in Segment
-	// The indices correspond to the direction numbers above, i.e. 0 = up, 1 = right, 2 = down, 3 = left
-	DX = []int{0, 1, 0, -1}
-	DY = []int{-1, 0, 1, 0}
 )
 
 type Segment struct {
@@ -44,12 +38,9 @@ func NewSegment(game *Game, cx, cy, health int, fast, head bool) *Segment {
 		head:   head,
 		// Each myriapod segment moves in a defined pattern within its current cell, before moving to the next one.
 		// It will start at one of the edges - represented by a number, where 0=down,1=right,2=up,3=left
-		// inEdge stores the edge through which it entered the cell.
-		// Several frames after entering a cell, it chooses which edge to leave through - stored in outEdge
-		// The path it follows is explained in the update and rank methods
-		inEdge:  DirectionLeft,
-		outEdge: DirectionRight,
-
+		// Several frames after entering a cell, it chooses which edge to leave through
+		inEdge:             DirectionLeft,  // edge through which it entered the cell
+		outEdge:            DirectionRight, // which edge to leave through
 		disallowDirection:  DirectionUp,    // Prevents segment from moving in a particular direction
 		previousXDirection: DirectionRight, // Used to create winding/snaking motion
 	}
@@ -94,10 +85,14 @@ func (s *Segment) Draw(screen *ebiten.Image) {
 	s.sprite.Draw(screen)
 }
 
+func (s *Segment) Y() float64 {
+	return s.posY
+}
+
 func (s *Segment) update() {
 	// Segments take either 16 or 8 frames to pass through each grid cell, depending on the amount by which
-	// game.time is updated each frame. phase will be a number between 0 and 15 indicating where we're at
-	// in that cycle.
+	// game.time is updated each frame.
+	// phase will be a number between 0 and 15 indicating where we're at in that cycle.
 	phase := s.game.time % 16
 
 	if phase == 0 {
@@ -105,7 +100,7 @@ func (s *Segment) update() {
 		s.cx += DX[s.outEdge]
 		s.cy += DY[s.outEdge]
 
-		// We then need to update in_edge. If, for example, we left the previous cell via its right edge, that means
+		// We then need to update inEdge. If, for example, we left the previous cell via its right edge, that means
 		// we're entering the new cell via its left edge.
 		s.inEdge = s.outEdge.Inverse()
 
@@ -156,7 +151,7 @@ func (s *Segment) update() {
 		// The second line deals with the case where two segments are moving towards each other and are in
 		// neighbouring cells. It allows a segment to tell if another segment trying to enter its cell from
 		// the opposite direction
-		s.game.occupied = append(s.game.occupied,
+		s.game.AddOccupation(
 			Cell{X: newCellX, Y: newCellY},
 			Cell{X: newCellX, Y: newCellY, Edge: s.outEdge.Inverse()},
 		)
@@ -176,29 +171,32 @@ func (s *Segment) update() {
 	// movement on the X axis - which is what we want in this case.
 	// The starting point for the offset_y calculation is that the segment starts at an offset of -16 and must cover
 	// 32 pixels over the 16 phases - therefore we must multiply phase by 2. We then subtract the result of the
-	// previous line, in which stolen_y_movement was calculated by multiplying SECONDARY_AXIS_POSITIONS[phase] by
+	// previous line, in which stolenYMovement was calculated by multiplying SECONDARY_AXIS_POSITIONS[phase] by
 	// turn_idx % 2.  mod 2 gives either zero (if turn_idx is 0 or 2), or 1 if it's 1 or 3. In the case we're looking
-	// at, turn_idx is 2, so stolen_y_movement is zero.
+	// at, turn_idx is 2, so stolenYMovement is zero.
 	// The end result of all this is that in the case where the segment is moving in a straight line through a cell,
 	// it just moves at 2 pixels per frame along the primary axis. If it's turning, it starts out moving at 2px
 	// per frame on the primary axis, but then starts moving along the secondary axis based on the values in
 	// SECONDARY_AXIS_POSITIONS. In this case we don't want it to continue moving along the primary axis - it should
 	// initially slow to moving at 1px per phase, and then stop moving completely. Effectively, the secondary axis
-	// is stealing movement from the primary axis - hence the name 'stolen_y_movement'
+	// is stealing movement from the primary axis - hence the name 'stolenYMovement'
 	offsetX := SecondaryAxisPositions[phase] * (2 - int(turnIdx))
-	stolen_y_movement := (int(turnIdx) % 2) * SecondaryAxisPositions[phase]
-	offsetY := -16 + (phase * 2) - stolen_y_movement
+	stolenYMovement := (int(turnIdx) % 2) * SecondaryAxisPositions[phase]
+	offsetY := -16 + (phase * 2) - stolenYMovement
 
 	// A rotation matrix is a set of numbers which, when multiplied by a set of coordinates, result in those
 	// coordinates being rotated. Recall that the code above  makes the assumption that segment is starting from the
 	// top edge of the cell and moving down. The code below chooses the appropriate rotation matrix based on the
 	// actual edge the segment started from, and then modifies offset_x and offset_y based on this rotation matrix.
-	rotation_matrix := RotationData[s.inEdge]
-	offsetX = offsetX*rotation_matrix[0] + offsetY*rotation_matrix[1]
-	offsetY = offsetX*rotation_matrix[2] + offsetY*rotation_matrix[3]
+	rotationMatrix := RotationData[s.inEdge]
+	offsetX = offsetX*rotationMatrix[0] + offsetY*rotationMatrix[1]
+	offsetY = offsetX*rotationMatrix[2] + offsetY*rotationMatrix[3]
 
-	// Finally, we can calculate the segment's position on the screen. See cell2pos function above.
+	// Finally, we can calculate the segment's position on the screen.
 	s.posX, s.posY = CellToPos(s.cx, s.cy, offsetX, offsetY)
+	if s.head {
+		log.Printf("cell x=%d, y=%d; offset x=%d, y=%d -> pos x=%f, y=%f", s.cx, s.cy, offsetX, offsetY, s.posX, s.posY)
+	}
 
 	// We now need to decide which image the segment should use as its sprite.
 	// Images for segment sprites follow the format 'segABCDE' where A is 0 or 1 depending on whether this is a
@@ -229,14 +227,11 @@ func (s *Segment) update() {
 	s.legFrame = phase / 4 // 16 phase cycle, 4 frames of animation
 }
 
+// rank returns a tuple consisting of a series of factors determining which grid cell the segment should try to move into next.
+// These are not absolute rules - rather they are used to rank the four directions in order of preference,
+// i.e. which direction is the best (or at least, least bad) to move in.
+// proposedOutEdge is a number between 0 and 3, representing a possible direction to move
 func (s *Segment) rank(proposedOutEdge Direction) int {
-	// proposed_out_edge is a number between 0 and 3, representing a possible direction to move - see DIRECTION_UP etc and DX/DY above
-	// This function returns a tuple consisting of a series of factors determining which grid cell the segment should try to move into next.
-	// These are not absolute rules - rather they are used to rank the four directions in order of preference,
-	// i.e. which direction is the best (or at least, least bad) to move in. The factors are boolean (True or False)
-	// values. A value of False is preferable to a value of True.
-	// The order of the factors in the returned tuple determines their importance in deciding which way to go,
-	// with the most important factor coming first.
 	newCellX := s.cx + DX[proposedOutEdge]
 	newCellY := s.cy + DY[proposedOutEdge]
 

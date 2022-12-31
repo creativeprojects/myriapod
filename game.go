@@ -2,6 +2,7 @@ package main
 
 import (
 	"math/rand"
+	"sort"
 	"time"
 
 	"github.com/cavern/creativeprojects/myriapod/lib"
@@ -14,6 +15,11 @@ var (
 	healthTable = [][]int{{1, 1}, {1, 2}, {2, 2}, {1, 1}}
 )
 
+type Drawable interface {
+	Draw(screen *ebiten.Image)
+	Y() float64
+}
+
 type Game struct {
 	audioContext *audio.Context
 	musicPlayer  *AudioPlayer
@@ -21,7 +27,7 @@ type Game struct {
 	state        GameState
 	space        *lib.Sprite
 	grid         [][]*Rock
-	occupied     []Cell
+	occupation   []Cell
 	player       *Player
 	enemy        *FlyingEnemy
 	segments     []*Segment
@@ -64,7 +70,7 @@ func (g *Game) Initialize() *Game {
 	g.segments = make([]*Segment, 0, 20)
 	g.bullets = make([]*Bullet, 0, 10)
 	g.explosions = make([]*Explosion, 0, 10)
-	g.occupied = make([]Cell, StartSegments)
+	// g.occupation = make([]Cell, StartSegments)
 	g.space.Start()
 	return g
 }
@@ -76,6 +82,10 @@ func (g *Game) Start() {
 	g.enemy = NewFlyingEnemy()
 	g.enemy.Start(g.player.sprite.X(lib.XCentre))
 	g.state = StatePlaying
+}
+
+func (g *Game) AddScore(score int) {
+	g.score += score
 }
 
 // Layout defines the size of the game in pixels
@@ -160,7 +170,7 @@ func (g *Game) ClearRocksForRespawn(x, y float64) {
 }
 
 func (g *Game) IsOccupied(x, y int) bool {
-	for _, cell := range g.occupied {
+	for _, cell := range g.occupation {
 		if cell.X == x && cell.Y == y {
 			return true
 		}
@@ -169,7 +179,7 @@ func (g *Game) IsOccupied(x, y int) bool {
 }
 
 func (g *Game) IsCellOccupied(cell Cell) bool {
-	for _, existingCell := range g.occupied {
+	for _, existingCell := range g.occupation {
 		if existingCell.Equal(cell) {
 			return true
 		}
@@ -180,6 +190,19 @@ func (g *Game) IsCellOccupied(cell Cell) bool {
 // Update game events
 func (g *Game) Update() error {
 	g.time++
+	if g.wave%4 == 3 {
+		g.time++
+	}
+
+	// At the start of each frame, we reset occupied to be an empty set. As each individual myriapod segment is
+	// updated, it will create entries in the occupied set to indicate that other segments should not attempt to
+	// enter its current grid cell. There are two types of entries that are created in the occupied set. One is a
+	// tuple consisting of a pair of numbers, representing grid cell coordinates. The other is a tuple consisting of
+	// three numbers - the first two being grid cell coordinates, the third representing an edge through which a
+	// segment is trying to enter a cell.
+	// It is only used for myriapod segments - not rocks.
+	g.occupation = make([]Cell, 0, StartSegments*20)
+
 	if g.state == StateMenu {
 		g.space.Update()
 		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
@@ -196,9 +219,9 @@ func (g *Game) Update() error {
 		if inpututil.IsKeyJustPressed(ebiten.KeyS) {
 			g.slow = !g.slow
 			if g.slow {
-				ebiten.SetMaxTPS(GameSlowSpeed)
+				ebiten.SetTPS(GameSlowSpeed)
 			} else {
-				ebiten.SetMaxTPS(GameNormalSpeed)
+				ebiten.SetTPS(GameNormalSpeed)
 			}
 		}
 		if g.enemy.IsInactive() {
@@ -217,9 +240,6 @@ func (g *Game) Update() error {
 				numSegments := StartSegments + g.wave/4*2 // On the first four waves there are 8 segments - then 10, and so on
 				for i := 0; i < numSegments; i++ {
 					cellX, cellY := -1-i, 0
-					if Debug {
-						cellX, cellY = rand.Intn(7)+1, rand.Intn(7)+1
-					}
 					// Determines whether segments take one or two hits to kill, based on the wave number.
 					// e.g. on wave 0 all segments take one hit; on wave 1 they alternate between one and two hits
 					health := healthTable[g.wave%4][i%2]
@@ -230,10 +250,10 @@ func (g *Game) Update() error {
 				}
 			}
 		}
-		g.updateGrid()
 		g.updateSegments()
 		g.updateBullets()
 		g.updateExplosions()
+		g.updateGrid()
 		g.player.Update()
 		g.enemy.Update()
 
@@ -268,11 +288,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	if g.state == StatePlaying {
-		g.drawGrid(screen)
-		g.drawSegments(screen)
-		g.drawBullets(screen)
-		g.drawExplosions(screen)
-		g.player.Draw(screen)
+		g.drawObjects(screen)
 		g.enemy.Draw(screen)
 		if Debug {
 			g.displayDebug(screen)
@@ -283,6 +299,40 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.state == StateGameOver {
 		screen.DrawImage(images["over"], nil)
 		return
+	}
+}
+
+// drawObjects from top to bottom
+func (g *Game) drawObjects(screen *ebiten.Image) {
+	objects := make([]Drawable, 0, NumGridCols*NumGridRows)
+	for _, row := range g.grid {
+		for _, rock := range row {
+			if rock != nil {
+				objects = append(objects, rock)
+			}
+		}
+	}
+	for _, segment := range g.segments {
+		if segment != nil {
+			objects = append(objects, segment)
+		}
+	}
+	for _, bullet := range g.bullets {
+		if bullet != nil {
+			objects = append(objects, bullet)
+		}
+	}
+	for _, explosion := range g.explosions {
+		if explosion != nil {
+			objects = append(objects, explosion)
+		}
+	}
+	objects = append(objects, g.player)
+	sort.Slice(objects, func(i, j int) bool {
+		return objects[i].Y() < objects[j].Y()
+	})
+	for _, object := range objects {
+		object.Draw(screen)
 	}
 }
 
@@ -361,29 +411,10 @@ func (g *Game) updateGrid() {
 		}
 	}
 }
-
-func (g *Game) drawGrid(screen *ebiten.Image) {
-	for _, row := range g.grid {
-		for _, element := range row {
-			if element != nil {
-				element.Draw(screen)
-			}
-		}
-	}
-}
-
 func (g *Game) updateBullets() {
 	for _, bullet := range g.bullets {
 		if bullet != nil {
 			bullet.Update()
-		}
-	}
-}
-
-func (g *Game) drawBullets(screen *ebiten.Image) {
-	for _, bullet := range g.bullets {
-		if bullet != nil {
-			bullet.Draw(screen)
 		}
 	}
 }
@@ -396,26 +427,10 @@ func (g *Game) updateExplosions() {
 	}
 }
 
-func (g *Game) drawExplosions(screen *ebiten.Image) {
-	for _, explosion := range g.explosions {
-		if explosion != nil {
-			explosion.Draw(screen)
-		}
-	}
-}
-
 func (g *Game) updateSegments() {
 	for _, segment := range g.segments {
 		if segment != nil {
 			segment.Update()
-		}
-	}
-}
-
-func (g *Game) drawSegments(screen *ebiten.Image) {
-	for _, segment := range g.segments {
-		if segment != nil {
-			segment.Draw(screen)
 		}
 	}
 }
@@ -432,10 +447,14 @@ func (g *Game) newRock() {
 	}
 }
 
+func (g *Game) AddOccupation(cell1, cell2 Cell) {
+	g.occupation = append(g.occupation, cell1, cell2)
+}
+
 // Convert a position in pixel units to a position in grid units.
 // In this game, a grid square is 32 pixels.
 func PosToCell(x, y float64) (int, int) {
-	return int((x - 16) / 32), int(y / 32)
+	return (int(x) - 16) / 32, int(y) / 32
 }
 
 // Convert grid cell position to pixel coordinates, with a given offset

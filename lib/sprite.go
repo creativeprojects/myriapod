@@ -77,6 +77,10 @@ func (s *Sprite) Update() {
 	s.image = s.animation[frameID]
 }
 
+func (s *Sprite) HasImage() bool {
+	return s.image != nil
+}
+
 // Draw the current image, or the animation to the screen. If no image or animation has been set, it does nothing
 func (s *Sprite) Draw(screen *ebiten.Image) {
 	if s.image == nil {

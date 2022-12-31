@@ -45,6 +45,10 @@ func (e *Explosion) Draw(screen *ebiten.Image) {
 	e.sprite.Draw(screen)
 }
 
+func (e *Explosion) Y() float64 {
+	return e.sprite.RawY()
+}
+
 func (e *Explosion) IsDone() bool {
 	return e.done
 }

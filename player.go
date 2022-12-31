@@ -73,8 +73,8 @@ func (p *Player) Update() {
 		if dx != 0 || dy != 0 {
 			// Move in the relevant directions by the specified number of pixels. The purpose of 3 - abs(dy) is to
 			// generate vectors which look either like (3,0) (which is 3 units long) or (2, 2) (which is sqrt(8) long)
-			// so we move roughly the same distance regardless of whether we're travelling straight along the x or y axis.
-			// or at 45 degrees. Without this, we would move noticeably faster when travelling diagonally.
+			// so we move roughly the same distance regardless of whether we're traveling straight along the x or y axis.
+			// or at 45 degrees. Without this, we would move noticeably faster when traveling diagonally.
 			p.Move(dx, 0, int(3-math.Abs(dy)))
 			p.Move(0, dy, int(3-math.Abs(dx)))
 		}
@@ -99,8 +99,11 @@ func (p *Player) Update() {
 			p.alive = false
 			p.timer = 0
 			p.frame = 0
-			p.lives--
-			p.sprite.Animate([]*ebiten.Image{images["blank"], p.images[p.direction][p.frame]}, nil, 2, true)
+			if !Debug {
+				p.lives--
+			}
+			// no player displayed during respawn time
+			p.sprite.SetImage(images["blank"])
 		}
 	} else {
 		// player not alive
@@ -110,6 +113,7 @@ func (p *Player) Update() {
 			p.sprite.MoveTo(240, 768)
 			// Ensure there are no rocks at the player's respawn position
 			p.game.ClearRocksForRespawn(240, 768)
+			p.sprite.Animate([]*ebiten.Image{images["blank"], p.images[p.direction][p.frame]}, nil, 2, true)
 		}
 	}
 
@@ -124,6 +128,10 @@ func (p *Player) Draw(screen *ebiten.Image) {
 	p.sprite.Draw(screen)
 	p.drawLives(screen)
 	p.drawScore(screen)
+}
+
+func (p *Player) Y() float64 {
+	return p.sprite.RawY()
 }
 
 func (p *Player) drawLives(screen *ebiten.Image) {

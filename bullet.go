@@ -50,7 +50,7 @@ func (b *Bullet) Update() {
 		return
 	}
 	if b.game.enemy.Collision(x, y) {
-		b.game.score += 20
+		b.game.AddScore(20)
 		b.game.SoundEffect("meanie_explode0")
 		b.game.Explosion(x, y, 2)
 		b.done = true
@@ -59,7 +59,7 @@ func (b *Bullet) Update() {
 
 	for i := 0; i < len(b.game.segments); i++ {
 		if b.game.segments[i].Collision(x, y) {
-			b.game.score += 10
+			b.game.AddScore(10)
 			b.game.SoundEffect("segment_explode0")
 			b.game.Explosion(x, y, 2)
 			b.done = true
@@ -81,4 +81,8 @@ func (b *Bullet) Draw(screen *ebiten.Image) {
 		return
 	}
 	b.sprite.Draw(screen)
+}
+
+func (b *Bullet) Y() float64 {
+	return b.sprite.RawY()
 }

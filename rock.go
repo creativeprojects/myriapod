@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"math/rand"
 	"strconv"
 
@@ -16,18 +17,20 @@ type Rock struct {
 	rockType   int
 	health     int
 	showHealth int
-	x          int
-	y          int
+	cellX      int
+	cellY      int
+	posX       float64
+	posY       float64
 }
 
-func NewRock(game *Game, x, y int, isTotem bool) *Rock {
+func NewRock(game *Game, cellX, cellY int, isTotem bool) *Rock {
 	health := 5
 	showHealth := 5
 	if !isTotem {
 		health = rand.Intn(2) + 3
 		showHealth = 1
 	}
-	posX, posY := CellToPos(x, y, 0, 0)
+	posX, posY := CellToPos(cellX, cellY, 0, 0)
 	return &Rock{
 		game:       game,
 		sprite:     lib.NewSprite(lib.XCentre, lib.YCentre).MoveTo(posX, posY),
@@ -36,8 +39,10 @@ func NewRock(game *Game, x, y int, isTotem bool) *Rock {
 		rockType:   rand.Intn(4),
 		health:     health,
 		showHealth: showHealth,
-		x:          x,
-		y:          y,
+		cellX:      cellX,
+		cellY:      cellY,
+		posX:       posX,
+		posY:       posY,
 	}
 }
 
@@ -47,7 +52,7 @@ func (r *Rock) Damage(amount int, damagedByBullet bool) bool {
 	// this should only happen when they are hit by a bullet.
 	if damagedByBullet && r.health == 5 {
 		r.game.SoundEffect("totem_destroy0")
-		r.game.score += 100
+		r.game.AddScore(100)
 	} else {
 		if amount > r.health-1 {
 			r.game.SoundEffect("rock_destroy0")
@@ -64,7 +69,7 @@ func (r *Rock) Damage(amount int, damagedByBullet bool) bool {
 	r.health -= amount
 	r.showHealth = r.health
 
-	// Return False if we've lost all our health, otherwise True
+	// Return false if we've lost all our health
 	return r.health < 1
 }
 
@@ -84,7 +89,15 @@ func (r *Rock) Update() {
 }
 
 func (r *Rock) Draw(screen *ebiten.Image) {
+	if !r.sprite.HasImage() {
+		log.Printf("No image for rock: totem=%v, type=%d, health=%d", r.isTotem, r.rockType, r.health)
+		return
+	}
 	r.sprite.Draw(screen)
+}
+
+func (r *Rock) Y() float64 {
+	return r.posY
 }
 
 func max(a, b int) int {

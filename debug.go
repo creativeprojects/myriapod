@@ -15,14 +15,15 @@ var (
 )
 
 func (g *Game) displayDebug(screen *ebiten.Image) {
-	template := " TPS: %0.2f - score: %d \n Rocks: %d - Segments: %d - Bullets: %d - Explosions: %d\n%s\n%s"
+	template := "\n\n\n TPS: %0.2f - time: %d \n Rocks: %d - Segments: %d - Bullets: %d - Explosions: %d - Occupation: %d\n%s\n%s"
 	msg := fmt.Sprintf(template,
-		ebiten.CurrentTPS(),
-		g.score,
+		ebiten.ActualTPS(),
+		g.time,
 		g.RockCount(),
 		len(g.segments),
 		len(g.bullets),
 		len(g.explosions),
+		len(g.occupation),
 		g.player,
 		g.enemy,
 	)

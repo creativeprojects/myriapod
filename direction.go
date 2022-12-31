@@ -26,3 +26,10 @@ func (d Direction) Inverse() Direction {
 	}
 	return 0
 }
+
+var (
+	// X and Y directions indexed by in_edge and out_edge in Segment
+	// The indices correspond to the direction numbers above, i.e. 0 = up, 1 = right, 2 = down, 3 = left
+	DX = []int{0, 1, 0, -1}
+	DY = []int{-1, 0, 1, 0}
+)
